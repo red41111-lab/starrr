@@ -1,57 +1,163 @@
-function doGet() {
-  return HtmlService.createTemplateFromFile('index')
-    .evaluate()
-    .setTitle('별과 우주 탐구 대시보드')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>별과 우주 탐구 대시보드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #0B0E14; color: #E2E8F0; font-family: 'Inter', sans-serif; }
+        .dashboard-card { background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(71, 85, 105, 0.8); backdrop-filter: blur(8px); }
+        .star-glow { transition: all 0.3s ease; }
+    </style>
+</head>
+<body class="p-4 md:p-8">
 
-function submitReport(data) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('응답') || ss.insertSheet('응답');
-  
-  // 헤더가 없다면 생성
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['응답 일시', '이름', '예상별의 등급기록', '오늘의 탐구결과', '피드백']);
-  }
-  
-  sheet.appendRow([new Date(), data.name, data.score, data.report, '']);
-  return true;
-}
+    <!-- Header -->
+    <header class="max-w-6xl mx-auto mb-8 flex justify-between items-center border-b border-slate-700 pb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-sky-400">별과 우주 탐구 대시보드</h1>
+            <p class="text-slate-400 text-sm">지구와의 거리와 절대 등급에 따른 별의 밝기 탐구</p>
+        </div>
+        <button onclick="showLogin()" class="bg-slate-800 hover:bg-slate-700 text-xs px-4 py-2 rounded">교사 관리자 모드</button>
+    </header>
 
-function getData() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('응답');
-  if (!sheet) return [];
-  
-  const values = sheet.getDataRange().getValues();
-  values.shift(); // 헤더 제거
-  
-  // 배열 형태로 클라이언트에 전송
-  return values.map(row => ({
-    date: row[0],
-    name: row[1],
-    score: row[2],
-    report: row[3],
-    feedback: row[4]
-  }));
-}
+    <!-- Student View -->
+    <div id="studentView" class="max-w-6xl mx-auto space-y-8">
+        <div class="grid lg:grid-cols-3 gap-6">
+            <!-- Simulation Panel -->
+            <div class="lg:col-span-1 space-y-6">
+                <div class="dashboard-card p-6 rounded-xl">
+                    <h2 class="text-sm font-bold text-sky-500 mb-4 uppercase">탐구 조절판</h2>
+                    <div class="space-y-6">
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-2">지구로부터의 거리 (pc)</label>
+                            <input type="range" id="distRange" min="1" max="2000" value="10" class="w-full h-2 bg-slate-700 rounded-lg accent-sky-500">
+                            <div class="text-right text-sky-400 font-mono" id="distVal">10 pc</div>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-400 mb-2">절대 등급 (M)</label>
+                            <input type="range" id="magRange" min="-5" max="15" value="0" step="0.5" class="w-full h-2 bg-slate-700 rounded-lg accent-blue-500">
+                            <div class="text-right text-blue-400 font-mono" id="magVal">0.0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-function clearSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('응답');
-  if (sheet) {
-    // 헤더 제외하고 내용 삭제
-    const lastRow = sheet.getLastRow();
-    if (lastRow > 1) {
-      sheet.getRange(2, 1, lastRow - 1, 5).clearContent();
-    }
-  }
-  return true;
-}
+            <!-- Visualizer -->
+            <div class="lg:col-span-2 dashboard-card p-6 rounded-xl flex flex-col items-center justify-center">
+                <div id="star" class="star-glow rounded-full bg-white shadow-[0_0_50px_rgba(255,255,255,0.8)] mb-8"></div>
+                <div id="statusText" class="text-center text-slate-300">데이터를 조절하여 별을 관측하세요.</div>
+                <div id="apparentMag" class="mt-4 text-2xl font-bold text-sky-300">겉보기 등급 (m): -</div>
+            </div>
+        </div>
 
-function saveFeedback(index, feedback) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('응답');
-  sheet.getRange(index + 2, 5).setValue(feedback); // 5번째 열에 피드백 저장
-  return true;
-}
+        <!-- Submission Section -->
+        <div class="dashboard-card p-8 rounded-xl border-sky-900 border-2">
+            <h3 class="text-xl font-bold text-sky-400 mb-6">탐구 보고서 제출</h3>
+            <div class="grid md:grid-cols-2 gap-4">
+                <input type="text" id="stuName" placeholder="이름" class="bg-slate-900 p-3 rounded text-white border border-slate-700">
+                <input type="number" id="stuScore" placeholder="계산된 예상 등급" class="bg-slate-900 p-3 rounded text-white border border-slate-700">
+                <textarea id="stuReport" placeholder="탐구 결과를 상세히 적어주세요." class="col-span-2 bg-slate-900 p-3 rounded text-white border border-slate-700 h-24"></textarea>
+            </div>
+            <button onclick="submitData()" class="mt-4 w-full bg-sky-600 hover:bg-sky-500 py-3 rounded font-bold text-white transition">제출하기</button>
+        </div>
+    </div>
+
+    <!-- Admin View -->
+    <div id="adminView" class="hidden max-w-6xl mx-auto dashboard-card p-8 rounded-xl">
+        <div class="flex justify-between items-center mb-8">
+            <h2 class="text-2xl font-bold text-emerald-400">교사 관리자 대시보드</h2>
+            <button onclick="hideAdmin()" class="text-slate-400">닫기</button>
+        </div>
+        <table class="w-full text-left text-sm">
+            <thead class="text-slate-400"><tr><th class="p-3">이름</th><th class="p-3">보고서</th><th class="p-3">피드백</th></tr></thead>
+            <tbody id="reportTable"></tbody>
+        </table>
+    </div>
+
+    <!-- Login Modal -->
+    <div id="loginModal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+        <div class="bg-slate-800 p-8 rounded-xl w-64 text-center">
+            <input type="password" id="adminPwd" placeholder="비밀번호" class="bg-black p-3 w-full mb-4 text-center rounded">
+            <button onclick="checkPwd()" class="bg-sky-600 w-full py-2 rounded">확인</button>
+        </div>
+    </div>
+
+    <script>
+        // Physics & UI Logic
+        const distInput = document.getElementById('distRange');
+        const magInput = document.getElementById('magRange');
+        const star = document.getElementById('star');
+
+        function updateSimulation() {
+            const d = parseFloat(distInput.value);
+            const M = parseFloat(magInput.value);
+            // 공식: m = M + 5 * log10(d) - 5
+            const m = M + 5 * Math.log10(d) - 5;
+            
+            document.getElementById('distVal').innerText = d + ' pc';
+            document.getElementById('magVal').innerText = M.toFixed(1);
+            document.getElementById('apparentMag').innerText = '겉보기 등급 (m): ' + m.toFixed(2);
+
+            // 시각적 표현
+            const size = Math.max(5, 100 - (m * 5));
+            star.style.width = size + 'px';
+            star.style.height = size + 'px';
+            star.style.opacity = Math.max(0.1, 1 - (m / 20));
+        }
+
+        distInput.oninput = updateSimulation;
+        magInput.oninput = updateSimulation;
+        updateSimulation();
+
+        // GAS Interaction
+        function submitData() {
+            const data = {
+                name: document.getElementById('stuName').value,
+                score: document.getElementById('stuScore').value,
+                report: document.getElementById('stuReport').value
+            };
+            google.script.run.withSuccessHandler(() => alert("제출 완료되었습니다.")).submitReport(data);
+        }
+
+        function showLogin() { document.getElementById('loginModal').classList.remove('hidden'); }
+        function hideAdmin() {
+            document.getElementById('adminView').classList.add('hidden');
+            document.getElementById('studentView').classList.remove('hidden');
+        }
+
+        function checkPwd() {
+            if(document.getElementById('adminPwd').value === '1234') {
+                document.getElementById('loginModal').classList.add('hidden');
+                document.getElementById('studentView').classList.add('hidden');
+                document.getElementById('adminView').classList.remove('hidden');
+                loadAdminData();
+            } else { alert("비밀번호가 틀렸습니다."); }
+        }
+
+        function loadAdminData() {
+            google.script.run.withSuccessHandler(renderAdminTable).getData();
+        }
+
+        function renderAdminTable(data) {
+            const tbody = document.getElementById('reportTable');
+            tbody.innerHTML = data.map((s, idx) => `
+                <tr class="border-b border-slate-800">
+                    <td class="p-3">${s.name}</td>
+                    <td class="p-3">${s.report}</td>
+                    <td class="p-3">
+                        <textarea id="f-${idx}" class="w-full bg-slate-900 p-2 text-xs rounded">${s.feedback || ''}</textarea>
+                        <button onclick="saveFeedback(${idx})" class="text-[10px] bg-emerald-600 px-3 py-1 mt-1 rounded">저장</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function saveFeedback(idx) {
+            const val = document.getElementById(`f-${idx}`).value;
+            google.script.run.withSuccessHandler(loadAdminData).saveFeedback(idx, val);
+        }
+    </script>
+</body>
+</html>
